@@ -1,0 +1,8 @@
+﻿.env
+secrets/
+credentials/
+node_modules/
+logs/
+evidence/private/
+*.key
+*.pem
