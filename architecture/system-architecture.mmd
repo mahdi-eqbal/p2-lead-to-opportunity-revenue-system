@@ -1,0 +1,39 @@
+﻿flowchart LR
+
+    A[Lead Source] --> B[n8n Intake]
+    B --> C[Validate & Normalize]
+    C --> D[(PostgreSQL Intake Ledger)]
+
+    D --> E[Resolve Salesforce Lead Identity]
+
+    E --> F[Data Readiness]
+    F --> G[ICP Fit]
+    G --> H[Buying Intent]
+    H --> I[Qualification Decision]
+
+    I --> J[Salesforce Lead]
+
+    J --> K[Routing]
+    K --> L[SLA Start]
+
+    L --> M{Sales Engaged?}
+
+    M -->|Yes| N[SLA Met]
+    M -->|No / Deadline Passed| O[SLA Breach & Escalation]
+
+    N --> P[Account / Contact Resolution]
+    O --> P
+
+    P --> Q{Existing Open Opportunity?}
+
+    Q -->|Yes| R[Existing Opportunity Path]
+    Q -->|No| S[Opportunity Candidate / Creation]
+
+    R --> T[(Operational Audit)]
+    S --> T
+
+    B --> T
+    C --> T
+    I --> T
+    K --> T
+    L --> T
