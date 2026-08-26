@@ -1,0 +1,951 @@
+{
+  "name": "P2 — Lead Intake & Qualification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "relayiq/lead-intake",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        192
+      ],
+      "id": "4cec4646-e526-4d19-aeb9-b11e64e9c1de",
+      "name": "Webhook",
+      "webhookId": "6932e9ac-efbb-4c32-845f-4552e01ee48e",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CzTPYAsnM46pgkSZ",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\n\nconst errors = [];\n\nconst source = String(body.source ?? '').trim().toLowerCase();\nconst allowedSources = [\n  'demo_request',\n  'website',\n  'partner_referral',\n  'outbound'\n];\n\nconst intakeId = String(body.intake_id ?? '').trim();\nconst externalLeadId = String(body.external_lead_id ?? '').trim();\nconst firstName = String(body.first_name ?? '').trim();\nconst lastName = String(body.last_name ?? '').trim();\nconst email = String(body.email ?? '').trim().toLowerCase();\nconst companyName = String(body.company_name ?? '').trim();\nconst country = String(body.country ?? '').trim();\n\nconst employeeCount =\n  body.employee_count === null ||\n  body.employee_count === undefined ||\n  body.employee_count === ''\n    ? null\n    : Number(body.employee_count);\n\nif (!intakeId) errors.push('intake_id is required');\nif (!externalLeadId) errors.push('external_lead_id is required');\n\nif (!allowedSources.includes(source)) {\n  errors.push('source is invalid');\n}\n\nif (!lastName) errors.push('last_name is required');\nif (!email) errors.push('email is required');\nif (!companyName) errors.push('company_name is required');\n\nif (\n  employeeCount !== null &&\n  (!Number.isInteger(employeeCount) || employeeCount < 0)\n) {\n  errors.push('employee_count must be a non-negative integer');\n}\n\nreturn {\n  json: {\n    validation_status: errors.length === 0 ? 'valid' : 'invalid',\n    validation_errors: errors,\n\n    intake_id: intakeId,\n    external_lead_id: externalLeadId,\n    source,\n    first_name: firstName || null,\n    last_name: lastName,\n    email,\n    company_name: companyName,\n    country: country || null,\n    employee_count: employeeCount,\n\n    raw_payload: body,\n    received_at: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        192
+      ],
+      "id": "71c4e95b-a27a-40e2-89a2-f23bc1ae5947",
+      "name": "Validate & Normalize Lead"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.lead_intake_rejections (\n    intake_id,\n    external_lead_id,\n    source,\n    rejection_reason,\n    validation_errors,\n    rejected_payload\n)\nVALUES (\n    $1,\n    $2,\n    $3,\n    $4,\n    $5::jsonb,\n    $6::jsonb\n)\nRETURNING\n    id,\n    intake_id,\n    external_lead_id,\n    rejection_reason,\n    rejected_at;",
+        "options": {
+          "queryReplacement": "={{ [   $json.intake_id || null,   $json.external_lead_id || null,   $json.source || null,   $json.validation_errors.join(\"; \"),   JSON.stringify($json.validation_errors),   JSON.stringify($json.raw_payload) ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        688,
+        288
+      ],
+      "id": "c6d0d130-eb1b-44f9-8ad4-b6a565bb5aac",
+      "name": "Log Rejected Lead",
+      "credentials": {
+        "postgres": {
+          "id": "XAPRv6pgxKSQTjq6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH inserted AS (\n    INSERT INTO public.lead_intake_events (\n        intake_id,\n        external_lead_id,\n        source,\n        first_name,\n        last_name,\n        email,\n        company_name,\n        country,\n        employee_count,\n        raw_payload,\n        received_at\n    )\n    VALUES (\n        $1,\n        $2,\n        $3,\n        $4,\n        $5,\n        $6,\n        $7,\n        $8,\n        $9,\n        $10::jsonb,\n        $11\n    )\n    ON CONFLICT (intake_id) DO NOTHING\n    RETURNING intake_id\n)\nSELECT\n    $1::text AS intake_id,\n    $2::text AS external_lead_id,\n    CASE\n        WHEN EXISTS (SELECT 1 FROM inserted)\n        THEN 'inserted'\n        ELSE 'duplicate'\n    END AS intake_status;",
+        "options": {
+          "queryReplacement": "={{ [   $json.intake_id,   $json.external_lead_id,   $json.source,   $json.first_name,   $json.last_name,   $json.email,   $json.company_name,   $json.country,   $json.employee_count,   JSON.stringify($json.raw_payload),   $json.received_at ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        688,
+        96
+      ],
+      "id": "8083eae9-6e54-49b7-b8ff-21679e034198",
+      "name": "Persist Lead Intake",
+      "credentials": {
+        "postgres": {
+          "id": "XAPRv6pgxKSQTjq6",
+          "name": "P2 Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a46644b1-0966-41ef-81ef-90536139c603",
+              "leftValue": "={{$json.intake_status}}",
+              "rightValue": "inserted",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        912,
+        96
+      ],
+      "id": "017bd150-3546-4980-9bb0-0a40c1022369",
+      "name": "New Lead Intake?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "733790f2-e637-4f1b-8490-0611c5bd5ab2",
+              "leftValue": "={{$json.validation_status}}",
+              "rightValue": "valid",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        464,
+        192
+      ],
+      "id": "04e6d387-578f-4639-852d-82adaec0e15b",
+      "name": "Lead Valid?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.lead_processing_attempts (\n    intake_id,\n    attempt_number,\n    processing_status,\n    started_at\n)\nVALUES (\n    $1,\n    1,\n    'processing',\n    NOW()\n)\nRETURNING\n    id,\n    intake_id,\n    attempt_number,\n    processing_status,\n    started_at;",
+        "options": {
+          "queryReplacement": "={{ [   $json.intake_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1136,
+        0
+      ],
+      "id": "8e0c0726-35ba-441a-81d6-15ffb1d510c5",
+      "name": "Create Processing Attempt",
+      "credentials": {
+        "postgres": {
+          "id": "XAPRv6pgxKSQTjq6",
+          "name": "P2 Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    lie.intake_id,\n    lie.external_lead_id,\n    lie.source,\n    lie.first_name,\n    lie.last_name,\n    lie.email,\n    lie.company_name,\n    lie.country,\n    lie.employee_count,\n    lie.raw_payload,\n    lie.received_at,\n\n    lpa.id AS processing_attempt_id,\n    lpa.attempt_number,\n    lpa.processing_status,\n    lpa.started_at\n\nFROM public.lead_intake_events lie\n\nJOIN public.lead_processing_attempts lpa\n    ON lpa.intake_id = lie.intake_id\n\nWHERE lie.intake_id = $1\n  AND lpa.id = $2;",
+        "options": {
+          "queryReplacement": "={{ [   $json.intake_id,   $json.id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1360,
+        0
+      ],
+      "id": "a2f11de0-11c5-44f0-a9a1-d73c0b2f5115",
+      "name": "Load Trusted Lead Context",
+      "credentials": {
+        "postgres": {
+          "id": "XAPRv6pgxKSQTjq6",
+          "name": "P2 Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $json;\n\nconst missingFields = [];\n\nif (!lead.email) missingFields.push('email');\nif (!lead.company_name) missingFields.push('company_name');\nif (!lead.country) missingFields.push('country');\nif (!lead.source) missingFields.push('source');\n\nlet dataReadiness = 'Ready';\nlet readinessReason = 'Required lead data is available';\n\nif (missingFields.length > 0) {\n  dataReadiness = 'Incomplete';\n  readinessReason = `Missing required fields: ${missingFields.join(', ')}`;\n}\n\nreturn {\n  json: {\n    ...lead,\n    data_readiness: dataReadiness,\n    data_readiness_reason: readinessReason,\n    missing_fields: missingFields\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1584,
+        0
+      ],
+      "id": "5684dd8c-2492-409c-9450-5fe505fdb5c6",
+      "name": "Evaluate Data Readiness"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "17e81042-80a2-4357-a5f8-7a41621652b9",
+              "leftValue": "={{$json.data_readiness}}",
+              "rightValue": "Ready",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1808,
+        0
+      ],
+      "id": "188a350d-6dfd-4edc-8c27-1f9798178c0c",
+      "name": "Data Ready?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.lead_processing_attempts\nSET\n    processing_status = 'review_required',\n    qualification_state = 'Data Review',\n    failure_type = 'data_readiness',\n    failure_reason = $2\nWHERE id = $1\nRETURNING\n    id,\n    intake_id,\n    processing_status,\n    qualification_state,\n    failure_type,\n    failure_reason;",
+        "options": {
+          "queryReplacement": "={{ [   $json.processing_attempt_id,   $json.data_readiness_reason ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        2016,
+        224
+      ],
+      "id": "24041a9d-2614-4e5e-a130-3e6e07989209",
+      "name": "Mark Data Review",
+      "credentials": {
+        "postgres": {
+          "id": "XAPRv6pgxKSQTjq6",
+          "name": "P2 Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $json;\n\nconst country = String(lead.country ?? '').trim();\nconst source = String(lead.source ?? '').trim();\nconst employeeCount = lead.employee_count;\n\nconst supportedCountries = [\n  'United States',\n  'Canada',\n  'Germany',\n  'United Kingdom',\n  'France',\n  'Netherlands',\n  'Spain',\n  'Italy'\n];\n\nlet icpFit = 'Weak Fit';\nlet icpReason = 'Lead does not match the current ICP rules';\n\nif (\n  supportedCountries.includes(country) &&\n  employeeCount >= 50 &&\n  employeeCount <= 999\n) {\n  icpFit = 'Strong Fit';\n  icpReason = 'Supported geography and target company size';\n} else if (\n  supportedCountries.includes(country) &&\n  (\n    (employeeCount >= 20 && employeeCount <= 49) ||\n    employeeCount >= 1000\n  )\n) {\n  icpFit = 'Moderate Fit';\n  icpReason = 'Supported geography with non-core company size';\n}\n\nlet buyingIntent = 'Low Intent';\nlet intentReason = 'No strong buying signal detected';\n\nif (source === 'demo_request') {\n  buyingIntent = 'High Intent';\n  intentReason = 'Demo request indicates explicit buying interest';\n} else if (source === 'partner_referral') {\n  buyingIntent = 'Medium Intent';\n  intentReason = 'Partner referral indicates meaningful interest';\n} else if (source === 'website') {\n  buyingIntent = 'Medium Intent';\n  intentReason = 'Website lead shows inbound interest';\n} else if (source === 'outbound') {\n  buyingIntent = 'Low Intent';\n  intentReason = 'Outbound source has no explicit inbound buying signal';\n}\n\nreturn {\n  json: {\n    ...lead,\n    icp_fit: icpFit,\n    icp_reason: icpReason,\n    buying_intent: buyingIntent,\n    buying_intent_reason: intentReason\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2032,
+        -16
+      ],
+      "id": "9b9b3384-44a7-4557-8704-769c197da7f3",
+      "name": "Evaluate ICP Fit & Buying Intent"
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $json;\n\nlet qualificationState = 'Needs Review';\nlet qualificationReason = 'Lead requires manual review';\n\nif (lead.icp_fit === 'Strong Fit' && lead.buying_intent === 'High Intent') {\n  qualificationState = 'Qualified';\n  qualificationReason = 'Strong ICP fit with high buying intent';\n} else if (\n  (lead.icp_fit === 'Strong Fit' || lead.icp_fit === 'Moderate Fit') &&\n  (lead.buying_intent === 'Low Intent' || lead.buying_intent === 'Medium Intent')\n) {\n  qualificationState = 'Nurture';\n  qualificationReason = 'Plausible ICP fit but buying intent is below qualification threshold';\n} else if (lead.icp_fit === 'Weak Fit') {\n  qualificationState = 'Disqualified';\n  qualificationReason = 'Lead does not meet current ICP criteria';\n}\n\nreturn {\n  json: {\n    ...lead,\n    qualification_state: qualificationState,\n    qualification_reason: qualificationReason\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2256,
+        -16
+      ],
+      "id": "0086d855-5ac3-4f64-b235-561733dff58f",
+      "name": "Determine Qualification State"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ac8979bb-44d3-4e25-8b86-ca6e20766be0",
+              "leftValue": "={{$json.qualification_state}}",
+              "rightValue": "Qualified",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        16,
+        640
+      ],
+      "id": "b688dacb-2e81-4b06-b2e3-5c5cef54f31a",
+      "name": "Qualified?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.lead_processing_attempts\nSET\n    processing_status = 'completed',\n    qualification_state = $2,\n    failure_type = NULL,\n    failure_reason = $3,\n    completed_at = NOW()\nWHERE id = $1\nRETURNING\n    id,\n    intake_id,\n    processing_status,\n    qualification_state,\n    failure_reason,\n    completed_at;",
+        "options": {
+          "queryReplacement": "={{ [   $json.processing_attempt_id,   $('Determine Qualification State').item.json.qualification_state,   $('Determine Qualification State').item.json.qualification_reason ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        240,
+        736
+      ],
+      "id": "8b8366a0-37e7-4164-b0b2-212034b0aa91",
+      "name": "Store Non-Qualified Outcome",
+      "credentials": {
+        "postgres": {
+          "id": "XAPRv6pgxKSQTjq6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $json;\n\nconst country = String(lead.country ?? '').trim();\nconst employeeCount = lead.employee_count;\nconst source = String(lead.source ?? '').trim();\n\nconst naCountries = [\n  'United States',\n  'Canada'\n];\n\nconst emeaCountries = [\n  'Germany',\n  'United Kingdom',\n  'France',\n  'Netherlands',\n  'Spain',\n  'Italy'\n];\n\nlet routingTarget = 'Manual Review';\nlet routingReason = 'No deterministic routing rule matched';\n\nif (employeeCount >= 1000) {\n  routingTarget = 'Enterprise Review';\n  routingReason = 'Enterprise-size company requires enterprise review';\n} else if (source === 'partner_referral') {\n  routingTarget = 'Partner Motion';\n  routingReason = 'Partner referral takes routing precedence';\n} else if (naCountries.includes(country)) {\n  if (employeeCount >= 20 && employeeCount <= 99) {\n    routingTarget = 'NA SMB';\n    routingReason = 'North America SMB routing rule matched';\n  } else if (employeeCount >= 100 && employeeCount <= 999) {\n    routingTarget = 'NA Mid-Market';\n    routingReason = 'North America mid-market routing rule matched';\n  }\n} else if (emeaCountries.includes(country)) {\n  if (employeeCount >= 20 && employeeCount <= 99) {\n    routingTarget = 'EMEA SMB';\n    routingReason = 'EMEA SMB routing rule matched';\n  } else if (employeeCount >= 100 && employeeCount <= 999) {\n    routingTarget = 'EMEA Mid-Market';\n    routingReason = 'EMEA mid-market routing rule matched';\n  }\n}\n\nreturn {\n  json: {\n    ...lead,\n    routing_target: routingTarget,\n    routing_reason: routingReason\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        544
+      ],
+      "id": "5ead9c01-790c-4e3d-80f7-ae7d0fe7e653",
+      "name": "Determine Routing Target"
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $json;\n\nconst now = new Date();\n\nlet slaHours = 24;\nlet slaType = 'Other Qualified Lead';\n\nif (lead.source === 'demo_request') {\n  slaHours = 2;\n  slaType = 'High-Intent Demo Request';\n} else if (lead.source === 'partner_referral') {\n  slaHours = 4;\n  slaType = 'Partner Referral';\n}\n\nconst slaDueAt = new Date(\n  now.getTime() + slaHours * 60 * 60 * 1000\n);\n\nreturn {\n  json: {\n    ...lead,\n    sla_status: 'Active',\n    sla_type: slaType,\n    sla_started_at: now.toISOString(),\n    sla_due_at: slaDueAt.toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        544
+      ],
+      "id": "b9559f0c-d7ff-46f8-9d50-def7dd70965f",
+      "name": "Calculate SLA"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH updated AS (\n    UPDATE public.lead_processing_attempts\n    SET\n        qualification_state = $2,\n        routing_target = $3,\n        sla_status = $4\n    WHERE id = $1\n    RETURNING *\n)\nSELECT\n    u.id AS processing_attempt_id,\n    u.intake_id,\n    u.attempt_number,\n    u.processing_status,\n    u.qualification_state,\n    u.routing_target,\n    u.sla_status,\n\n    lie.external_lead_id,\n    lie.source,\n    lie.first_name,\n    lie.last_name,\n    lie.email,\n    lie.company_name,\n    lie.country,\n    lie.employee_count,\n    lie.raw_payload\n\nFROM updated u\nJOIN public.lead_intake_events lie\n    ON lie.intake_id = u.intake_id;",
+        "options": {
+          "queryReplacement": "={{ [   $json.processing_attempt_id,   $json.qualification_state,   $json.routing_target,   $json.sla_status ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        688,
+        544
+      ],
+      "id": "dd2f3335-7ba3-4d6c-af08-19e4d423c75c",
+      "name": "Persist Qualification & Routing",
+      "credentials": {
+        "postgres": {
+          "id": "XAPRv6pgxKSQTjq6",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://empathetic-fox-myqjdy-dev-ed.trailblaze.my.salesforce.com/services/oauth2/token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        912,
+        544
+      ],
+      "id": "e5cdf50a-9860-4852-a281-86bb5b8e1204",
+      "name": "Get Salesforce Access Token",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "CEi3NXmKYhgQtTjV",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Get Salesforce Access Token').item.json.instance_url + \"/services/data/v65.0/query\" }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{\n  \"SELECT Id, FirstName, LastName, Email, Company, External_Lead_ID__c \" +\n  \"FROM Lead \" +\n  \"WHERE External_Lead_ID__c = '\" +\n  $('Persist Qualification & Routing').item.json.external_lead_id +\n  \"'\"\n}}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{\"Bearer \" + $json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1136,
+        544
+      ],
+      "id": "943cd0f2-ff58-40a7-b1fe-590e14213415",
+      "name": "Lookup Lead in Salesforce API",
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5c576cee-e816-4a96-a1f4-f0cc5c04b053",
+              "leftValue": "={{$json.totalSize}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1360,
+        544
+      ],
+      "id": "50d98f20-b101-4a60-882e-b475c0526227",
+      "name": "Existing Salesforce Lead?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('Get Salesforce Access Token').item.json.instance_url + \"/services/data/v65.0/sobjects/Lead\"}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{\"Bearer \" + $('Get Salesforce Access Token').item.json.access_token}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  FirstName: $('Persist Qualification & Routing').item.json.first_name,\n  LastName: $('Persist Qualification & Routing').item.json.last_name,\n  Email: $('Persist Qualification & Routing').item.json.email,\n  Company: $('Persist Qualification & Routing').item.json.company_name,\n  Country: $('Persist Qualification & Routing').item.json.country,\n  LeadSource: 'Web',\n  NumberOfEmployees: Number($('Persist Qualification & Routing').item.json.employee_count),\n\n  External_Lead_ID__c: $('Persist Qualification & Routing').item.json.external_lead_id,\n\n  Data_Readiness__c: 'Ready',\n\n  ICP_Fit__c: $('Evaluate ICP Fit & Buying Intent').item.json.icp_fit,\n  Buying_Intent__c: $('Evaluate ICP Fit & Buying Intent').item.json.buying_intent,\n\n  Qualification_State__c: $('Determine Qualification State').item.json.qualification_state,\n  Qualification_Reason__c: $('Determine Qualification State').item.json.qualification_reason,\n\n  Routing_Target__c: $('Determine Routing Target').item.json.routing_target,\n\n  SLA_Status__c: 'Active',\n  SLA_Started_At__c: $('Calculate SLA').item.json.sla_started_at,\n  SLA_Due_At__c: $('Calculate SLA').item.json.sla_due_at\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1584,
+        640
+      ],
+      "id": "f75cf424-4bc4-4539-84bd-ed16643f9765",
+      "name": "Create Salesforce Lead"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.lead_processing_attempts\nSET\n    salesforce_lead_id = $2\nWHERE id = $1\nRETURNING\n    id,\n    intake_id,\n    salesforce_lead_id,\n    processing_status,\n    qualification_state,\n    routing_target,\n    sla_status;",
+        "options": {
+          "queryReplacement": "={{ [   $('Persist Qualification & Routing').item.json.processing_attempt_id,   $('Create Salesforce Lead').item.json.id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1808,
+        640
+      ],
+      "id": "ef9f4e89-b2bf-46ce-ab47-cd6a76e25898",
+      "name": "Persist Salesforce Lead Link",
+      "credentials": {
+        "postgres": {
+          "id": "XAPRv6pgxKSQTjq6",
+          "name": "P2 Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.lead_processing_attempts\nSET\n    salesforce_lead_id = $2\nWHERE id = $1\nRETURNING\n    id,\n    intake_id,\n    salesforce_lead_id,\n    processing_status,\n    qualification_state,\n    routing_target,\n    sla_status;",
+        "options": {
+          "queryReplacement": "={{ [   $('Persist Qualification & Routing').item.json.processing_attempt_id,   $('Lookup Lead in Salesforce API').item.json.records[0].Id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1584,
+        448
+      ],
+      "id": "cb93fafa-6b20-497a-b524-b9e62e7a5da4",
+      "name": "Link Existing Salesforce Lead",
+      "credentials": {
+        "postgres": {
+          "id": "XAPRv6pgxKSQTjq6",
+          "name": "P2 Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Get Salesforce Access Token').item.json.instance_url + \"/services/data/v65.0/sobjects/Lead/\" + $json.salesforce_lead_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{\"Bearer \" + $('Get Salesforce Access Token').item.json.access_token}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  Data_Readiness__c: 'Ready',\n  ICP_Fit__c: $('Evaluate ICP Fit & Buying Intent').item.json.icp_fit,\n  Buying_Intent__c: $('Evaluate ICP Fit & Buying Intent').item.json.buying_intent,\n  Qualification_State__c: $('Determine Qualification State').item.json.qualification_state,\n  Qualification_Reason__c: $('Determine Qualification State').item.json.qualification_reason,\n  Routing_Target__c: $('Determine Routing Target').item.json.routing_target,\n  SLA_Status__c: 'Active',\n  SLA_Started_At__c: $('Calculate SLA').item.json.sla_started_at,\n  SLA_Due_At__c: $('Calculate SLA').item.json.sla_due_at\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2016,
+        544
+      ],
+      "id": "63ac7a42-ba7a-4cf7-9e5d-a18f7d1c392e",
+      "name": "Update Resolved Salesforce Lead"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.lead_processing_attempts\nSET\n    processing_status = 'completed',\n    completed_at = NOW()\nWHERE id = $1\nRETURNING\n    id,\n    intake_id,\n    salesforce_lead_id,\n    processing_status,\n    qualification_state,\n    routing_target,\n    sla_status,\n    completed_at;",
+        "options": {
+          "queryReplacement": "={{ [   $('Persist Qualification & Routing').item.json.processing_attempt_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        2240,
+        544
+      ],
+      "id": "d790a4af-8a66-47df-ac03-886f1b47e1fc",
+      "name": "Complete Processing Attempt",
+      "credentials": {
+        "postgres": {
+          "id": "XAPRv6pgxKSQTjq6",
+          "name": "P2 Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.lead_processing_attempts\nSET\n    processing_status = 'failed',\n    failure_type = 'salesforce_lookup_error',\n    failure_reason = $2,\n    completed_at = NOW()\nWHERE id = $1\nRETURNING\n    id,\n    intake_id,\n    processing_status,\n    failure_type,\n    failure_reason,\n    completed_at;",
+        "options": {
+          "queryReplacement": "={{ [   $('Persist Qualification & Routing').item.json.processing_attempt_id,   $json.error?.message || $json.message || 'Salesforce lookup failed' ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1360,
+        784
+      ],
+      "id": "3b62e9d1-4e49-4d49-b8b2-f913f7dbe483",
+      "name": "Record Salesforce Lookup Failure",
+      "credentials": {
+        "postgres": {
+          "id": "XAPRv6pgxKSQTjq6",
+          "name": "P2 Supabase PostgreSQL"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Normalize Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Normalize Lead": {
+      "main": [
+        [
+          {
+            "node": "Lead Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Lead Intake": {
+      "main": [
+        [
+          {
+            "node": "New Lead Intake?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New Lead Intake?": {
+      "main": [
+        [
+          {
+            "node": "Create Processing Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Valid?": {
+      "main": [
+        [
+          {
+            "node": "Persist Lead Intake",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Rejected Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Processing Attempt": {
+      "main": [
+        [
+          {
+            "node": "Load Trusted Lead Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Trusted Lead Context": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Data Readiness",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Data Readiness": {
+      "main": [
+        [
+          {
+            "node": "Data Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Ready?": {
+      "main": [
+        [
+          {
+            "node": "Evaluate ICP Fit & Buying Intent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Data Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate ICP Fit & Buying Intent": {
+      "main": [
+        [
+          {
+            "node": "Determine Qualification State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determine Qualification State": {
+      "main": [
+        [
+          {
+            "node": "Qualified?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualified?": {
+      "main": [
+        [
+          {
+            "node": "Determine Routing Target",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Store Non-Qualified Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determine Routing Target": {
+      "main": [
+        [
+          {
+            "node": "Calculate SLA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate SLA": {
+      "main": [
+        [
+          {
+            "node": "Persist Qualification & Routing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Qualification & Routing": {
+      "main": [
+        [
+          {
+            "node": "Get Salesforce Access Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Salesforce Access Token": {
+      "main": [
+        [
+          {
+            "node": "Lookup Lead in Salesforce API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Lead in Salesforce API": {
+      "main": [
+        [
+          {
+            "node": "Existing Salesforce Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Salesforce Lookup Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Existing Salesforce Lead?": {
+      "main": [
+        [
+          {
+            "node": "Link Existing Salesforce Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Salesforce Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Salesforce Lead": {
+      "main": [
+        [
+          {
+            "node": "Persist Salesforce Lead Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Link Existing Salesforce Lead": {
+      "main": [
+        [
+          {
+            "node": "Update Resolved Salesforce Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Salesforce Lead Link": {
+      "main": [
+        [
+          {
+            "node": "Update Resolved Salesforce Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Resolved Salesforce Lead": {
+      "main": [
+        [
+          {
+            "node": "Complete Processing Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "25bda476-a2f5-4bbc-b479-2a0273c8d3e5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "bd5bf7ce4c647f5dd10963cf3eb9224866bf8991c10fb5ddba28c2d48295613f"
+  },
+  "nodeGroups": [],
+  "id": "ywPiHQYPIKpCIbqN",
+  "tags": []
+}
