@@ -2,6 +2,7 @@
 
 A Salesforce-centered Revenue Systems implementation that controls the lead lifecycle from inbound intake through validation, qualification, routing, SLA enforcement, CRM identity resolution, sales handoff, and operational failure handling.
 
+[![Release](https://img.shields.io/github/v/release/mahdi-eqbal/=tag)](https://github.com/mahdi-eqbal/p2-lead-to-opportunity-revenue-system/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Repository Quality Checks](https://github.com/mahdi-eqbal/p2-lead-to-opportunity-revenue-system/actions/workflows/repository-quality.yml/badge.svg)](https://github.com/mahdi-eqbal/p2-lead-to-opportunity-revenue-system/actions/workflows/repository-quality.yml)
 ![Case Study](https://img.shields.io/badge/type-independent_case_study-334155)
@@ -251,5 +252,6 @@ The public workflow export is intended to preserve architecture and business log
 ---
 
 Built by [Mahdi Eqbal](https://github.com/mahdi-eqbal) as an independent Revenue Systems / GTM Engineering implementation case study.
+
 
 
