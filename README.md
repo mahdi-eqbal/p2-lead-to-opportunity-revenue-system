@@ -1,7 +1,8 @@
-# P2 — End-to-End Lead-to-Opportunity Revenue Operations System
+﻿# P2 â€” End-to-End Lead-to-Opportunity Revenue Operations System
 
 A Salesforce-centered Revenue Systems implementation that controls the lead lifecycle from inbound intake through validation, qualification, routing, SLA enforcement, CRM identity resolution, sales handoff, and operational failure handling.
 
+[![Repository Quality Checks](https://github.com/mahdi-eqbal/p2-lead-to-opportunity-revenue-system/actions/workflows/repository-quality.yml/badge.svg)](https://github.com/mahdi-eqbal/p2-lead-to-opportunity-revenue-system/actions/workflows/repository-quality.yml)
 ![Case Study](https://img.shields.io/badge/type-independent_case_study-334155)
 ![Status](https://img.shields.io/badge/status-implemented_and_validated-15803d)
 ![CRM](https://img.shields.io/badge/CRM-Salesforce-00a1e0)
@@ -52,23 +53,23 @@ This system places a controlled operational layer between inbound lead capture a
 
 ```text
 Inbound Lead Event
-    ↓
+    â†“
 Validation & Normalization
-    ↓
+    â†“
 Intake Persistence & Duplicate Detection
-    ↓
+    â†“
 Processing Attempt & Trusted Lead Context
-    ↓
+    â†“
 Data Readiness & Qualification
-    ↓
+    â†“
 Routing & SLA Calculation
-    ↓
+    â†“
 Salesforce Authentication & Identity Resolution
-    ↓
+    â†“
 Reuse Existing Lead or Create New Lead
-    ↓
+    â†“
 Salesforce Flow Task Creation
-    ↓
+    â†“
 Processing Completion or Explicit Failure State
 ```
 
@@ -200,16 +201,16 @@ An integration failure is not treated as an invisible workflow crash. It becomes
 
 ```text
 p2-lead-to-opportunity-revenue-system/
-├── adrs/          # Architecture decision records
-├── architecture/  # System, processing-state, Salesforce data-model, and ownership documentation
-├── docs/          # Implementation and operational documentation
-├── evidence/
-│   └── n8n/       # Executed positive, negative, duplicate, SLA, identity, and failure evidence
-├── sql/           # PostgreSQL schema and operational queries
-├── workflows/     # Redacted n8n workflow export
-├── .gitignore
-├── README.md
-└── TEST-MATRIX.md
+â”œâ”€â”€ adrs/          # Architecture decision records
+â”œâ”€â”€ architecture/  # System, processing-state, Salesforce data-model, and ownership documentation
+â”œâ”€â”€ docs/          # Implementation and operational documentation
+â”œâ”€â”€ evidence/
+â”‚   â””â”€â”€ n8n/       # Executed positive, negative, duplicate, SLA, identity, and failure evidence
+â”œâ”€â”€ sql/           # PostgreSQL schema and operational queries
+â”œâ”€â”€ workflows/     # Redacted n8n workflow export
+â”œâ”€â”€ .gitignore
+â”œâ”€â”€ README.md
+â””â”€â”€ TEST-MATRIX.md
 ```
 
 ## How to Review the Implementation
@@ -249,3 +250,4 @@ The public workflow export is intended to preserve architecture and business log
 ---
 
 Built by [Mahdi Eqbal](https://github.com/mahdi-eqbal) as an independent Revenue Systems / GTM Engineering implementation case study.
+
